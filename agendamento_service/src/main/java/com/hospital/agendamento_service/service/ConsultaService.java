@@ -1,13 +1,16 @@
 package com.hospital.agendamento_service.service;
 
+import com.hospital.agendamento_service.config.RabbitMQConfig;
 import com.hospital.agendamento_service.dto.ConsultaRequestDTO;
 import com.hospital.agendamento_service.dto.ConsultaResponseDTO;
+import com.hospital.commons.dto.NotificacaoMessage;
 import com.hospital.agendamento_service.mapper.ConsultaMapper;
 import com.hospital.agendamento_service.model.Consulta;
 import com.hospital.agendamento_service.repository.ConsultaRepository;
 import com.hospital.agendamento_service.security.SecurityUtils;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -21,10 +24,23 @@ import java.util.stream.Collectors;
 public class ConsultaService {
 
     private final ConsultaRepository consultaRepository;
+    private final RabbitTemplate rabbitTemplate;
 
     public ConsultaResponseDTO agendarConsulta(ConsultaRequestDTO dto) {
         Consulta consulta = ConsultaMapper.toEntity(dto);
-        return ConsultaMapper.toDTO(consultaRepository.save(consulta));
+        Consulta salva = consultaRepository.save(consulta);
+
+
+        NotificacaoMessage mensagem = new NotificacaoMessage(
+                salva.getPacienteId(),
+                salva.getMedicoId(),
+                salva.getDataHora(),
+                "Sua consulta foi agendada com sucesso."
+        );
+
+        rabbitTemplate.convertAndSend(RabbitMQConfig.CONSULTA_NOTIFICACAO_QUEUE, mensagem);
+
+        return ConsultaMapper.toDTO(salva);
     }
 
     public List<ConsultaResponseDTO> listarPorPaciente(String pacienteId) {
